@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Text.Json;
 using Soenneker.Extensions.String;
@@ -25,13 +25,22 @@ public static class JwtStringsExtension
         try
         {
             // JWT format: header.payload.signature
-            string[] parts = jwt.Split('.');
-
-            if (parts.Length < 2)
+            // Parse manually to avoid Split allocation
+            ReadOnlySpan<char> jwtSpan = jwt.AsSpan();
+            int firstDot = jwtSpan.IndexOf('.');
+            if (firstDot < 0)
                 return null;
 
+            int secondDot = jwtSpan.Slice(firstDot + 1).IndexOf('.');
+            if (secondDot < 0)
+                return null;
+
+            // Extract payload (between first and second dot)
+            ReadOnlySpan<char> payloadBase64 = jwtSpan.Slice(firstDot + 1, secondDot);
+            string payloadBase64String = payloadBase64.ToString();
+
             // Decode Base64Url payload (second part of JWT)
-            string payloadJson = PadBase64(parts[1]).ToBytesFromBase64().ToStr();
+            string payloadJson = PadBase64(payloadBase64String).ToBytesFromBase64().ToStr();
 
             using JsonDocument document = JsonDocument.Parse(payloadJson);
 
