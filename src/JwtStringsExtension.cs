@@ -55,13 +55,7 @@ public static class JwtStringsExtension
             try
             {
                 // Base64Url in System.Buffers.Text handles '-'/'_' and missing padding
-                OperationStatus status = Base64Url.DecodeFromChars(
-                    payloadB64Url,
-                    rented,
-                    out int charsConsumed,
-                    out int bytesWritten,
-                    isFinalBlock: true
-                );
+                OperationStatus status = Base64Url.DecodeFromChars(payloadB64Url, rented, out int charsConsumed, out int bytesWritten, isFinalBlock: true);
 
                 if (status != OperationStatus.Done || charsConsumed != payloadB64Url.Length || bytesWritten <= 0)
                     return null;
@@ -83,7 +77,8 @@ public static class JwtStringsExtension
                     if (reader.TokenType != JsonTokenType.Number || !reader.TryGetInt64(out long expUnix))
                         return null;
 
-                    return DateTimeOffset.FromUnixTimeSeconds(expUnix).UtcDateTime;
+                    return DateTimeOffset.FromUnixTimeSeconds(expUnix)
+                                         .UtcDateTime;
                 }
 
                 return null;
