@@ -1,8 +1,12 @@
 using Microsoft.Extensions.Logging;
-using System;
-using System.Text.Json;
-using Soenneker.Extensions.String;
 using Soenneker.Extensions.Arrays.Bytes;
+using Soenneker.Extensions.String;
+using System;
+using System.Buffers;
+using System.Buffers.Text;
+using System.Diagnostics.Contracts;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
 
 namespace Soenneker.Extensions.Strings.Jwt;
 
@@ -11,12 +15,16 @@ namespace Soenneker.Extensions.Strings.Jwt;
 /// </summary>
 public static class JwtStringsExtension
 {
+    private static ReadOnlySpan<byte> ExpUtf8 => "exp"u8;
+
     /// <summary>
-    /// Tries to extract the expiration date from a JSON Web Token (JWT) efficiently. This method avoids unnecessary allocations.
+    /// Tries to extract the expiration date from a JSON Web Token (JWT) efficiently.
+    /// Uses Base64Url decoding + Utf8JsonReader to avoid intermediate string/JsonDocument allocations.
     /// </summary>
     /// <param name="jwt">The JWT string.</param>
     /// <param name="logger">An optional logger to record critical errors if parsing fails.</param>
-    /// <returns>The expiration date of the JWT as a <see cref="DateTime"/> if valid; otherwise, <c>null</c> if parsing fails.</returns>
+    /// <returns>The expiration date of the JWT as a <see cref="DateTime"/> if valid; otherwise, <c>null</c>.</returns>
+    [Pure, MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static DateTime? ToJwtExpiration(this string jwt, ILogger? logger = null)
     {
         if (jwt.IsNullOrWhiteSpace())
@@ -24,34 +32,66 @@ public static class JwtStringsExtension
 
         try
         {
-            // JWT format: header.payload.signature
-            // Parse manually to avoid Split allocation
-            ReadOnlySpan<char> jwtSpan = jwt.AsSpan();
-            int firstDot = jwtSpan.IndexOf('.');
-            if (firstDot < 0)
+            // JWT: header.payload.signature
+            ReadOnlySpan<char> span = jwt.AsSpan();
+
+            int firstDot = span.IndexOf('.');
+            if (firstDot <= 0)
                 return null;
 
-            int secondDot = jwtSpan.Slice(firstDot + 1).IndexOf('.');
-            if (secondDot < 0)
+            ReadOnlySpan<char> afterFirst = span.Slice(firstDot + 1);
+            int secondDotRel = afterFirst.IndexOf('.');
+            if (secondDotRel <= 0)
                 return null;
 
-            // Extract payload (between first and second dot)
-            ReadOnlySpan<char> payloadBase64 = jwtSpan.Slice(firstDot + 1, secondDot);
-            string payloadBase64String = payloadBase64.ToString();
-
-            // Decode Base64Url payload (second part of JWT)
-            string payloadJson = PadBase64(payloadBase64String).ToBytesFromBase64().ToStr();
-
-            using JsonDocument document = JsonDocument.Parse(payloadJson);
-
-            if (!document.RootElement.TryGetProperty("exp", out JsonElement expElement))
+            ReadOnlySpan<char> payloadB64Url = afterFirst.Slice(0, secondDotRel);
+            if (payloadB64Url.IsEmpty)
                 return null;
 
-            if (expElement.ValueKind != JsonValueKind.Number || !expElement.TryGetInt64(out long expUnix))
-                return null;
+            // Decode Base64Url payload into rented byte[]
+            int maxDecodedLen = GetMaxBase64DecodedLength(payloadB64Url.Length);
+            byte[] rented = ArrayPool<byte>.Shared.Rent(maxDecodedLen);
 
-            // Convert Unix timestamp to DateTime
-            return DateTimeOffset.FromUnixTimeSeconds(expUnix).UtcDateTime;
+            try
+            {
+                // Base64Url in System.Buffers.Text handles '-'/'_' and missing padding
+                OperationStatus status = Base64Url.DecodeFromChars(
+                    payloadB64Url,
+                    rented,
+                    out int charsConsumed,
+                    out int bytesWritten,
+                    isFinalBlock: true
+                );
+
+                if (status != OperationStatus.Done || charsConsumed != payloadB64Url.Length || bytesWritten <= 0)
+                    return null;
+
+                // Scan JSON for "exp" without JsonDocument allocations
+                var reader = new Utf8JsonReader(new ReadOnlySpan<byte>(rented, 0, bytesWritten), isFinalBlock: true, state: default);
+
+                while (reader.Read())
+                {
+                    if (reader.TokenType != JsonTokenType.PropertyName)
+                        continue;
+
+                    if (!reader.ValueTextEquals(ExpUtf8))
+                        continue;
+
+                    if (!reader.Read())
+                        return null;
+
+                    if (reader.TokenType != JsonTokenType.Number || !reader.TryGetInt64(out long expUnix))
+                        return null;
+
+                    return DateTimeOffset.FromUnixTimeSeconds(expUnix).UtcDateTime;
+                }
+
+                return null;
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented, clearArray: false);
+            }
         }
         catch (Exception e)
         {
@@ -60,12 +100,12 @@ public static class JwtStringsExtension
         }
     }
 
-    /// <summary>
-    /// Ensures proper Base64 padding for decoding.
-    /// </summary>
-    private static string PadBase64(string base64)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetMaxBase64DecodedLength(int base64CharLen)
     {
-        int padding = base64.Length % 4;
-        return padding == 0 ? base64 : base64 + new string('=', 4 - padding);
+        // Max decoded bytes for base64/base64url input (with or without padding):
+        // ceil(n/4) * 3
+        // Use integer math: ((n + 3) / 4) * 3
+        return ((base64CharLen + 3) >> 2) * 3;
     }
 }
