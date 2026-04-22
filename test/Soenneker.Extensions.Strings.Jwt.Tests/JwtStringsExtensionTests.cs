@@ -1,28 +1,26 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Soenneker.Tests.FixturedUnit;
+using Soenneker.Tests.HostedUnit;
 using System;
 using Microsoft.Extensions.Logging;
-using Xunit;
 
 namespace Soenneker.Extensions.Strings.Jwt.Tests;
 
-[Collection("Collection")]
-public class JwtStringsExtensionTests : FixturedUnitTest
+[ClassDataSource<Host>(Shared = SharedType.PerTestSession)]
+public class JwtStringsExtensionTests : HostedUnitTest
 {
     private readonly ILogger<JwtStringsExtensionTests> _logger = new NullLogger<JwtStringsExtensionTests>();
 
-
-    public JwtStringsExtensionTests(Fixture fixture, ITestOutputHelper output) : base(fixture, output)
+    public JwtStringsExtensionTests(Host host) : base(host)
     {
     }
 
-    [Fact]
+    [Test]
     public void Default()
     {
     }
 
-    [Fact]
+    [Test]
     public void ToJwtExpiration_ValidJwt_ReturnsExpirationDate()
     {
         // Arrange: Create a valid JWT with an expiration time in the future
@@ -36,7 +34,7 @@ public class JwtStringsExtensionTests : FixturedUnitTest
         result.Should().BeCloseTo(DateTimeOffset.FromUnixTimeSeconds(exp).UtcDateTime, TimeSpan.FromSeconds(1));
     }
 
-    [Fact]
+    [Test]
     public void ToJwtExpiration_ValidJwtWithoutExp_ReturnsNull()
     {
         // Arrange: JWT without an "exp" claim
@@ -49,7 +47,7 @@ public class JwtStringsExtensionTests : FixturedUnitTest
         result.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public void ToJwtExpiration_InvalidJwtFormat_ReturnsNull()
     {
         // Arrange: Malformed JWT (missing parts)
@@ -62,7 +60,7 @@ public class JwtStringsExtensionTests : FixturedUnitTest
         result.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public void ToJwtExpiration_NullOrEmptyJwt_ReturnsNull()
     {
         // Act & Assert
@@ -71,7 +69,7 @@ public class JwtStringsExtensionTests : FixturedUnitTest
         "   ".ToJwtExpiration(_logger).Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public void ToJwtExpiration_InvalidBase64_ReturnsNull()
     {
         // Arrange: JWT with invalid Base64 payload
@@ -84,7 +82,7 @@ public class JwtStringsExtensionTests : FixturedUnitTest
         result.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public void ToJwtExpiration_InvalidExpFormat_ReturnsNull()
     {
         // Arrange: JWT with non-numeric "exp" claim
@@ -97,7 +95,7 @@ public class JwtStringsExtensionTests : FixturedUnitTest
         result.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public void ToJwtExpiration_ExpiredJwt_ReturnsCorrectDate()
     {
         // Arrange: Expired JWT
@@ -111,7 +109,7 @@ public class JwtStringsExtensionTests : FixturedUnitTest
         result.Should().Be(DateTimeOffset.FromUnixTimeSeconds(exp).UtcDateTime);
     }
 
-    [Fact]
+    [Test]
     public void ToJwtExpiration_FutureJwt_ReturnsCorrectDate()
     {
         // Arrange: JWT with expiration in the future
