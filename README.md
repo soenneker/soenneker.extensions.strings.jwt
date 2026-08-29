@@ -4,7 +4,7 @@
 [![](https://img.shields.io/github/actions/workflow/status/soenneker/soenneker.extensions.strings.jwt/codeql.yml?label=CodeQL&style=for-the-badge)](https://github.com/soenneker/soenneker.extensions.strings.jwt/actions/workflows/codeql.yml)
 
 # ![](https://user-images.githubusercontent.com/4441470/224455560-91ed3ee7-f510-4041-a8d2-3fc093025112.png) Soenneker.Extensions.Strings.Jwt
-A collection of helpful string extension methods around JWTs.
+Extracts the `exp` timestamp from a JWT payload without validating or materializing the whole token.
 
 ## Installation
 
@@ -12,15 +12,14 @@ A collection of helpful string extension methods around JWTs.
 dotnet add package Soenneker.Extensions.Strings.Jwt
 ```
 
-## Quick start
+## Usage
 
 ```csharp
 using Soenneker.Extensions.Strings.Jwt;
 
-string jwt = "example";
-var result = jwt.ToJwtExpiration();
+DateTime? expiresUtc = jwt.ToJwtExpiration(logger);
 ```
 
-## Common operations
+`ToJwtExpiration()` decodes only the payload, reads an integer `exp` claim as Unix seconds, and returns a UTC `DateTime`. Missing segments, malformed Base64URL/JSON, a missing or non-integer `exp`, and out-of-range timestamps all return `null`. Unexpected exceptions are logged at `Critical` when a logger is supplied.
 
-- `ToJwtExpiration()` - Tries to extract the expiration date from a JSON Web Token (JWT) efficiently. Uses Base64Url decoding + Utf8JsonReader to avoid intermediate string/JsonDocument allocations. Returns the expiration date of the JWT as a `DateTime` if valid; otherwise, `null`.
+This method does **not** validate the JWT signature, issuer, audience, algorithm, or current expiration state. Use it only to inspect a token whose trust has been established elsewhere.
