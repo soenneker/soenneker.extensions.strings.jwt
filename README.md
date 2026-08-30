@@ -22,4 +22,6 @@ DateTime? expiresUtc = jwt.ToJwtExpiration(logger);
 
 `ToJwtExpiration()` decodes only the payload, reads an integer `exp` claim as Unix seconds, and returns a UTC `DateTime`. Missing segments, malformed Base64URL/JSON, a missing or non-integer `exp`, and out-of-range timestamps all return `null`. Unexpected exceptions are logged at `Critical` when a logger is supplied.
 
+Payload segments larger than 1 MiB of encoded text are rejected to avoid large pooled allocations. Decoded payload bytes are cleared before the buffer is returned to the shared pool.
+
 This method does **not** validate the JWT signature, issuer, audience, algorithm, or current expiration state. Use it only to inspect a token whose trust has been established elsewhere.

@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Buffers.Text;
 using System.Diagnostics.Contracts;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace Soenneker.Extensions.Strings.Jwt;
@@ -15,6 +16,8 @@ namespace Soenneker.Extensions.Strings.Jwt;
 /// </summary>
 public static class JwtStringsExtension
 {
+    private const int _maxPayloadChars = 1024 * 1024;
+
     private static ReadOnlySpan<byte> ExpUtf8 => "exp"u8;
 
     /// <summary>
@@ -45,17 +48,18 @@ public static class JwtStringsExtension
                 return null;
 
             ReadOnlySpan<char> payloadB64Url = afterFirst.Slice(0, secondDotRel);
-            if (payloadB64Url.IsEmpty)
+            if (payloadB64Url.IsEmpty || payloadB64Url.Length > _maxPayloadChars)
                 return null;
 
             // Decode Base64Url payload into rented byte[]
             int maxDecodedLen = GetMaxBase64DecodedLength(payloadB64Url.Length);
             byte[] rented = ArrayPool<byte>.Shared.Rent(maxDecodedLen);
+            var bytesWritten = 0;
 
             try
             {
                 // Base64Url in System.Buffers.Text handles '-'/'_' and missing padding
-                OperationStatus status = Base64Url.DecodeFromChars(payloadB64Url, rented, out int charsConsumed, out int bytesWritten, isFinalBlock: true);
+                OperationStatus status = Base64Url.DecodeFromChars(payloadB64Url, rented, out int charsConsumed, out bytesWritten, isFinalBlock: true);
 
                 if (status != OperationStatus.Done || charsConsumed != payloadB64Url.Length || bytesWritten <= 0)
                     return null;
@@ -85,6 +89,7 @@ public static class JwtStringsExtension
             }
             finally
             {
+                CryptographicOperations.ZeroMemory(rented.AsSpan(0, bytesWritten));
                 ArrayPool<byte>.Shared.Return(rented, clearArray: false);
             }
         }
