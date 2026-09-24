@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Soenneker.Extensions.Arrays.Bytes;
 using Soenneker.Extensions.String;
 using System;
 using System.Buffers;
